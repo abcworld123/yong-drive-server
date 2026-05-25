@@ -1,0 +1,40 @@
+name: Build Native Binary
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04-arm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: graalvm/setup-graalvm@v1
+        with:
+          java-version: '25'
+          distribution: 'graalvm-community'
+          cache: 'gradle'
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build native image
+        run: ./gradlew nativeCompile --no-daemon
+
+      - name: Rename binary
+        run: |
+          mv build/native/nativeCompile/yong-drive-spring \
+             yong-drive-spring-linux-arm64
+
+      - name: Publish rolling release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest build
+          body: |
+            Auto-built from `${{ github.sha }}` on ${{ github.ref_name }}.
+          files: yong-drive-spring-linux-arm64
+          make_latest: 'true'

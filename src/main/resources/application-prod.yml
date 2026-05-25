@@ -1,0 +1,6 @@
+server:
+  port: 8200
+
+logging:
+  level:
+    com.abcworld.yongdrive: INFO

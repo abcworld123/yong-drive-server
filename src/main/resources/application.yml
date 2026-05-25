@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: yong-drive
+  profiles:
+    active: local
+  data:
+    redis:
+      host: localhost
+      port: 6379
+  session:
+    store-type: redis
+    timeout: 30d
+  codec:
+    max-in-memory-size: -1
+
+server:
+  reactive:
+    session:
+      cookie:
+        secure: false
+        same-site: lax
+        http-only: true
+
+app:
+  storage:
+    root: ./storage
+  auth:
+    password: ${AUTH_PASSWORD:}
+    cid-ttl-seconds: 2592000
+    cid-length: 32
+  cache:
+    object-list-ttl-seconds: 86400
