@@ -45,3 +45,11 @@ kotlin {
 tasks.withType<Test> {
     useJUnitPlatform()
 }
+
+graalvmNative {
+    binaries {
+        named("main") {
+            buildArgs.add("-march=compatibility")
+        }
+    }
+}
