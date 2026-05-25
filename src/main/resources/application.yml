@@ -1,8 +1,6 @@
 spring:
   application:
     name: yong-drive
-  profiles:
-    active: local
   data:
     redis:
       host: localhost
