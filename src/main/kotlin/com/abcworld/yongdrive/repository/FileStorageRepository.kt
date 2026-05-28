@@ -4,11 +4,16 @@ import com.abcworld.yongdrive.config.StorageProperties
 import com.abcworld.yongdrive.entity.BucketInfo
 import com.abcworld.yongdrive.entity.ObjectInfo
 import com.abcworld.yongdrive.util.PathUtils
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.reactive.asFlow
+import kotlinx.coroutines.reactive.asPublisher
+import kotlinx.coroutines.reactor.awaitSingleOrNull
+import kotlinx.coroutines.withContext
 import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DataBufferUtils
+import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import org.springframework.stereotype.Repository
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
 import java.io.OutputStream
 import java.nio.file.Files
 import java.nio.file.Path
@@ -77,30 +82,28 @@ class FileStorageRepository(
         return if (path.exists()) path else null
     }
 
-    fun writeStream(bucket: String, key: String, body: Flux<DataBuffer>): Mono<Void> =
-        Mono.fromCallable {
-            val path = PathUtils.resolveSafe(storageProperties.root, bucket, key)
-            Files.createDirectories(path.parent)
-            path
+    suspend fun writeStream(bucket: String, key: String, body: Flow<DataBuffer>) {
+        val path = withContext(Dispatchers.IO) {
+            val p = PathUtils.resolveSafe(storageProperties.root, bucket, key)
+            Files.createDirectories(p.parent)
+            p
         }
-            .subscribeOn(reactor.core.scheduler.Schedulers.boundedElastic())
-            .flatMap { path ->
-                DataBufferUtils.write(
-                    body,
-                    path,
-                    StandardOpenOption.CREATE,
-                    StandardOpenOption.TRUNCATE_EXISTING,
-                    StandardOpenOption.WRITE,
-                )
-            }
+        DataBufferUtils.write(
+            body.asPublisher(),
+            path,
+            StandardOpenOption.CREATE,
+            StandardOpenOption.TRUNCATE_EXISTING,
+            StandardOpenOption.WRITE,
+        ).awaitSingleOrNull()
+    }
 
-    fun readStream(bucket: String, key: String): Flux<DataBuffer> {
+    fun readStream(bucket: String, key: String): Flow<DataBuffer> {
         val path = PathUtils.resolveSafe(storageProperties.root, bucket, key)
         return DataBufferUtils.read(
             path,
-            org.springframework.core.io.buffer.DefaultDataBufferFactory.sharedInstance,
+            DefaultDataBufferFactory.sharedInstance,
             DEFAULT_CHUNK_SIZE,
-        )
+        ).asFlow()
     }
 
     fun copyInputStreamTo(bucket: String, key: String, out: OutputStream) {

@@ -1,1 +1,1 @@
-rootProject.name = "yong-drive-spring"
+rootProject.name = "yong-drive-server"

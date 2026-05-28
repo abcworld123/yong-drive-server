@@ -7,13 +7,12 @@ plugins {
 }
 
 group = "com.abcworld"
-version = "0.0.1-SNAPSHOT"
-description = "yong-drive-spring"
+version = "0.9.0"
+description = "yong-drive-server"
 
 java {
     toolchain {
         languageVersion = JavaLanguageVersion.of(25)
-        vendor = JvmVendorSpec.GRAAL_VM
     }
 }
 
@@ -23,10 +22,9 @@ repositories {
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webflux")
+    implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-data-redis-reactive")
     implementation("org.springframework.session:spring-session-data-redis")
-    implementation("org.springframework.security:spring-security-crypto")
-    implementation("io.projectreactor.kotlin:reactor-kotlin-extensions")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-reactor")
     implementation("tools.jackson.module:jackson-module-kotlin")

@@ -30,8 +30,8 @@ jobs:
 
       - name: Rename binary
         run: |
-          mv build/native/nativeCompile/yong-drive-spring \
-             yong-drive-spring-linux-arm64
+          mv build/native/nativeCompile/yong-drive-server \
+             yong-drive-server-linux-arm64
 
       - name: Publish rolling release
         uses: softprops/action-gh-release@v3
@@ -40,5 +40,5 @@ jobs:
           name: Latest build
           body: |
             Auto-built from `${{ github.sha }}` on ${{ github.ref_name }}.
-          files: yong-drive-spring-linux-arm64
+          files: yong-drive-server-linux-arm64
           make_latest: 'true'

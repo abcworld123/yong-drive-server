@@ -2,13 +2,15 @@ package com.abcworld.yongdrive.service
 
 import com.abcworld.yongdrive.config.CacheProperties
 import com.abcworld.yongdrive.entity.ObjectInfo
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.reactive.asFlow
+import kotlinx.coroutines.reactor.awaitSingle
+import kotlinx.coroutines.reactor.awaitSingleOrNull
 import tools.jackson.databind.ObjectMapper
 import tools.jackson.module.kotlin.readValue
 import org.springframework.data.redis.core.ReactiveStringRedisTemplate
 import org.springframework.data.redis.core.ScanOptions
 import org.springframework.stereotype.Service
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
 import java.time.Duration
 
 @Service
@@ -18,29 +20,29 @@ class ObjectCacheService(
     private val cacheProperties: CacheProperties,
 ) {
 
-    fun get(bucket: String, path: String): Mono<List<ObjectInfo>> =
+    suspend fun get(bucket: String, path: String): List<ObjectInfo>? =
         redis.opsForValue().get(key(bucket, path))
-            .map { objectMapper.readValue<List<ObjectInfo>>(it) }
+            .awaitSingleOrNull()
+            ?.let { objectMapper.readValue<List<ObjectInfo>>(it) }
 
-    fun put(bucket: String, path: String, objects: List<ObjectInfo>): Mono<Boolean> {
+    suspend fun put(bucket: String, path: String, objects: List<ObjectInfo>) {
         val json = objectMapper.writeValueAsString(objects)
-        return redis.opsForValue().set(
+        redis.opsForValue().set(
             key(bucket, path),
             json,
             Duration.ofSeconds(cacheProperties.objectListTtlSeconds),
-        )
+        ).awaitSingleOrNull()
     }
 
-    fun invalidate(bucket: String, path: String): Mono<Long> =
-        redis.delete(key(bucket, path))
+    suspend fun invalidate(bucket: String, path: String): Long =
+        redis.delete(key(bucket, path)).awaitSingle()
 
-    fun invalidatePrefix(bucket: String, pathPrefix: String): Mono<Long> {
+    suspend fun invalidatePrefix(bucket: String, pathPrefix: String): Long {
         val pattern = "${key(bucket, pathPrefix)}*"
-        return redis.scan(ScanOptions.scanOptions().match(pattern).count(1000).build())
-            .collectList()
-            .flatMap { keys ->
-                if (keys.isEmpty()) Mono.just(0L) else redis.delete(Flux.fromIterable(keys))
-            }
+        val keys = redis.scan(ScanOptions.scanOptions().match(pattern).count(1000).build())
+            .asFlow().toList()
+        return if (keys.isEmpty()) 0L
+        else redis.delete(*keys.toTypedArray()).awaitSingle()
     }
 
     private fun key(bucket: String, path: String): String = "$bucket/$path"

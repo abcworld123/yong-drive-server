@@ -9,23 +9,19 @@ import com.abcworld.yongdrive.dto.response.ApiResponse
 import com.abcworld.yongdrive.service.DownloadService
 import com.abcworld.yongdrive.service.ObjectService
 import com.abcworld.yongdrive.service.UploadService
-import com.abcworld.yongdrive.util.PathUtils
+import kotlinx.coroutines.flow.Flow
 import org.springframework.core.io.buffer.DataBuffer
-import org.springframework.http.HttpHeaders
-import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
-import java.net.URLEncoder
-import java.nio.charset.StandardCharsets
 
 @RestController
 @RequestMapping("/s3/object")
+@PreAuthorize("isAuthenticated()")
 class ObjectController(
     private val objectService: ObjectService,
     private val uploadService: UploadService,
@@ -33,73 +29,39 @@ class ObjectController(
 ) {
 
     @PostMapping("/get")
-    fun get(@RequestBody request: GetObjectsRequest): Mono<ApiResponse> =
-        objectService.list(request).map { ApiResponse.objects(it) }
+    suspend fun get(@RequestBody request: GetObjectsRequest): ApiResponse =
+        ApiResponse.objects(objectService.list(request))
 
     @PostMapping("/create")
-    fun create(@RequestBody request: CreateFolderRequest): Mono<ApiResponse> =
-        objectService.createFolder(request).map { created ->
-            if (created) ApiResponse.success()
-            else ApiResponse.failure("폴더가 이미 존재합니다.")
-        }
+    suspend fun create(@RequestBody request: CreateFolderRequest): ApiResponse {
+        objectService.createFolder(request)
+        return ApiResponse.success()
+    }
 
     @PostMapping("/delete")
-    fun delete(@RequestBody request: DeleteRequest): Mono<ApiResponse> =
-        objectService.delete(request).thenReturn(ApiResponse.success())
+    suspend fun delete(@RequestBody request: DeleteRequest): ApiResponse {
+        objectService.delete(request)
+        return ApiResponse.success()
+    }
 
     @PostMapping("/paste")
-    fun paste(@RequestBody request: PasteRequest): Mono<ApiResponse> =
-        objectService.paste(request).thenReturn(ApiResponse.success())
+    suspend fun paste(@RequestBody request: PasteRequest): ApiResponse {
+        objectService.paste(request)
+        return ApiResponse.success()
+    }
 
     @PostMapping("/upload")
-    fun upload(
+    suspend fun upload(
         @RequestParam bucket: String,
         @RequestParam path: String,
         @RequestParam filename: String,
-        @RequestBody body: Flux<DataBuffer>,
-    ): Mono<ApiResponse> =
+        @RequestBody body: Flow<DataBuffer>,
+    ): ApiResponse {
         uploadService.upload(bucket, path, filename, body)
-            .thenReturn(ApiResponse.success())
+        return ApiResponse.success()
+    }
 
     @PostMapping("/download")
-    fun download(@RequestBody request: DownloadRequest): Mono<ResponseEntity<Flux<DataBuffer>>> {
-        val filenames = request.filenames
-
-        if (filenames.size == 1 && !PathUtils.isFolderKey(filenames[0])) {
-            val filename = filenames[0]
-            if (!downloadService.singleFileExists(request.bucket, request.path, filename)) {
-                return Mono.just(ResponseEntity.notFound().build())
-            }
-            val size = downloadService.singleFileSize(request.bucket, request.path, filename)
-            val stream = downloadService.singleFileStream(request.bucket, request.path, filename)
-            val encodedName = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20")
-            return Mono.just(
-                ResponseEntity.ok()
-                    .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$encodedName\"")
-                    .header(HttpHeaders.CONTENT_LENGTH, size.toString())
-                    .body(stream)
-            )
-        }
-
-        val zipName = downloadService.resolveZipName(request.path, filenames)
-        val encodedZipName = URLEncoder.encode(zipName, StandardCharsets.UTF_8).replace("+", "%20")
-
-        val basePathAndNamesMono: Mono<Pair<String, List<String>>> =
-            if (filenames.size == 1 && PathUtils.isFolderKey(filenames[0])) {
-                val folder = filenames[0]
-                val innerPath = "${request.path}$folder"
-                objectService.list(GetObjectsRequest(bucket = request.bucket, path = innerPath))
-                    .map { inner -> innerPath to inner.map { it.name } }
-            } else {
-                Mono.just(request.path to filenames)
-            }
-
-        return basePathAndNamesMono.map { (basePath, zipFilenames) ->
-            val stream = downloadService.zipStream(request.bucket, basePath, zipFilenames)
-            ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"$encodedZipName.zip\"")
-                .contentType(MediaType.parseMediaType("application/zip"))
-                .body(stream)
-        }
-    }
+    suspend fun download(@RequestBody request: DownloadRequest): ResponseEntity<Flow<DataBuffer>> =
+        downloadService.download(request)
 }
