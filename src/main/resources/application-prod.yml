@@ -4,3 +4,7 @@ server:
 logging:
   level:
     com.abcworld.yongdrive: INFO
+
+app:
+  cors:
+    allowed-origins: []

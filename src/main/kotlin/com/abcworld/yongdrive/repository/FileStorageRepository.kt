@@ -6,13 +6,13 @@ import com.abcworld.yongdrive.entity.ObjectInfo
 import com.abcworld.yongdrive.util.PathUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactive.asPublisher
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import kotlinx.coroutines.withContext
+import org.springframework.core.io.FileSystemResource
+import org.springframework.core.io.Resource
 import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DataBufferUtils
-import org.springframework.core.io.buffer.DefaultDataBufferFactory
 import org.springframework.stereotype.Repository
 import java.io.OutputStream
 import java.nio.file.Files
@@ -97,13 +97,14 @@ class FileStorageRepository(
         ).awaitSingleOrNull()
     }
 
-    fun readStream(bucket: String, key: String): Flow<DataBuffer> {
+    /**
+     * 다운로드용 파일을 Resource로 연다. FileSystemResource를 반환하면 WebFlux의
+     * ResourceHttpMessageWriter가 Content-Length / Accept-Ranges / Range(206) 를 자동 처리한다.
+     * 일반 파일이 아니면(폴더·없음) null.
+     */
+    fun openFile(bucket: String, key: String): Resource? {
         val path = PathUtils.resolveSafe(storageProperties.root, bucket, key)
-        return DataBufferUtils.read(
-            path,
-            DefaultDataBufferFactory.sharedInstance,
-            DEFAULT_CHUNK_SIZE,
-        ).asFlow()
+        return if (path.isRegularFile()) FileSystemResource(path) else null
     }
 
     fun copyInputStreamTo(bucket: String, key: String, out: OutputStream) {
@@ -129,11 +130,6 @@ class FileStorageRepository(
             Files.createDirectories(dst.parent)
             Files.copy(src, dst, StandardCopyOption.REPLACE_EXISTING)
         }
-    }
-
-    fun size(bucket: String, key: String): Long {
-        val path = PathUtils.resolveSafe(storageProperties.root, bucket, key)
-        return if (path.isRegularFile()) path.fileSize() else 0L
     }
 
     fun walkFiles(bucket: String, key: String): List<Pair<String, Path>> {
@@ -167,9 +163,5 @@ class FileStorageRepository(
                 }
             }
         }
-    }
-
-    companion object {
-        private const val DEFAULT_CHUNK_SIZE = 64 * 1024
     }
 }

@@ -6,12 +6,9 @@ import com.abcworld.yongdrive.repository.FileStorageRepository
 import com.abcworld.yongdrive.util.PathUtils
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.reactive.asFlow
-import org.springframework.core.io.buffer.DataBuffer
-import org.springframework.core.io.buffer.DataBufferUtils
-import org.springframework.core.io.buffer.DefaultDataBufferFactory
+import org.springframework.core.io.InputStreamResource
+import org.springframework.core.io.Resource
 import org.springframework.http.HttpHeaders
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -30,7 +27,7 @@ class DownloadService(
     private val objectService: ObjectService,
 ) {
 
-    suspend fun download(request: DownloadRequest): ResponseEntity<Flow<DataBuffer>> {
+    suspend fun download(request: DownloadRequest): ResponseEntity<Resource> {
         val filenames = request.filenames
         if (filenames.size == 1 && !PathUtils.isFolderKey(filenames[0])) {
             return singleFileResponse(request.bucket, request.path, filenames[0])
@@ -42,22 +39,23 @@ class DownloadService(
         bucket: String,
         path: String,
         filename: String,
-    ): ResponseEntity<Flow<DataBuffer>> {
+    ): ResponseEntity<Resource> {
         val key = "$path$filename"
-        if (!storage.exists(bucket, key)) {
-            return ResponseEntity.notFound().build()
-        }
+        val resource = storage.openFile(bucket, key)
+            ?: return ResponseEntity.notFound().build()
+        // FileSystemResource를 그대로 반환하면 ResourceHttpMessageWriter가 Content-Length,
+        // Accept-Ranges: bytes, 그리고 Range 요청 시 206 Partial Content를 처리한다(IDM 이어받기/분할).
         return ResponseEntity.ok()
             .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"${encodeFilename(filename)}\"")
-            .header(HttpHeaders.CONTENT_LENGTH, storage.size(bucket, key).toString())
-            .body(storage.readStream(bucket, key))
+            .contentType(MediaType.APPLICATION_OCTET_STREAM)
+            .body(resource)
     }
 
     private suspend fun zipResponse(
         bucket: String,
         path: String,
         filenames: List<String>,
-    ): ResponseEntity<Flow<DataBuffer>> {
+    ): ResponseEntity<Resource> {
         val (basePath, zipFilenames) = resolveZipSource(bucket, path, filenames)
         val zipName = resolveZipName(path, filenames)
         return ResponseEntity.ok()
@@ -79,8 +77,7 @@ class DownloadService(
         return path to filenames
     }
 
-    private fun zipStream(bucket: String, basePath: String, filenames: List<String>): Flow<DataBuffer> {
-        val factory = DefaultDataBufferFactory.sharedInstance
+    private fun zipStream(bucket: String, basePath: String, filenames: List<String>): Resource {
         val input = PipedInputStream(BUFFER_SIZE)
         val output = PipedOutputStream(input)
 
@@ -109,7 +106,8 @@ class DownloadService(
             }.onFailure { runCatching { output.close() } }
         }
 
-        return DataBufferUtils.readInputStream({ input }, factory, BUFFER_SIZE).asFlow()
+        // InputStreamResource는 길이 미상 → ResourceHttpMessageWriter가 chunked로 스트리밍(Range 없음).
+        return InputStreamResource(input)
     }
 
     private fun resolveZipName(path: String, filenames: List<String>): String {

@@ -19,8 +19,8 @@ class AuthController(
     private val authService: AuthService,
 ) {
     @GetMapping("/check")
-    fun check(@CurrentSecurityContext context: SecurityContext): ApiResponse =
-        ApiResponse(success = context.authentication?.isAuthenticated == true)
+    fun check(@CurrentSecurityContext context: SecurityContext?): ApiResponse =
+        ApiResponse(success = context?.authentication?.isAuthenticated == true)
 
     @PostMapping("/login")
     suspend fun login(

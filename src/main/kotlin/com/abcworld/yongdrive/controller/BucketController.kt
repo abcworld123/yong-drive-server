@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
 
 @RestController
-@RequestMapping("/s3/bucket")
+@RequestMapping("/bucket")
 @PreAuthorize("isAuthenticated()")
 class BucketController(
     private val bucketService: BucketService,

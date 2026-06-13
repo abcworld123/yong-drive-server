@@ -23,3 +23,7 @@ app:
     cid-length: 32
   cache:
     object-list-ttl-seconds: 86400
+  cors:
+    allowed-origins:
+      - http://localhost:3000
+      - http://127.0.0.1:3000
