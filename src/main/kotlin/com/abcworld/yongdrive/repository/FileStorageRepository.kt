@@ -6,8 +6,6 @@ import com.abcworld.yongdrive.entity.ObjectInfo
 import com.abcworld.yongdrive.util.PathUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.reactive.asPublisher
-import kotlinx.coroutines.reactor.awaitSingleOrNull
 import kotlinx.coroutines.withContext
 import org.springframework.core.io.FileSystemResource
 import org.springframework.core.io.Resource
@@ -15,6 +13,7 @@ import org.springframework.core.io.buffer.DataBuffer
 import org.springframework.core.io.buffer.DataBufferUtils
 import org.springframework.stereotype.Repository
 import java.io.OutputStream
+import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -82,19 +81,40 @@ class FileStorageRepository(
         return if (path.exists()) path else null
     }
 
+    /**
+     * 업로드 스트림을 파일로 쓴다. DataBufferUtils.write(AsynchronousFileChannel 기반)는
+     * 청크(~8KB)마다 request(1) → 스레드 풀 hop을 반복해서, 느린 CPU(라즈베리파이 A72)에서는
+     * 청크당 왕복 지연이 처리량을 지배한다(실측 ~13MB/s). Flow 브리지가 이미 청크를
+     * 프리페치하므로 Dispatchers.IO에서 FileChannel에 순차 blocking write 하는 쪽이 빠르다.
+     */
     suspend fun writeStream(bucket: String, key: String, body: Flow<DataBuffer>) {
         val path = withContext(Dispatchers.IO) {
             val p = PathUtils.resolveSafe(storageProperties.root, bucket, key)
             Files.createDirectories(p.parent)
             p
         }
-        DataBufferUtils.write(
-            body.asPublisher(),
-            path,
-            StandardOpenOption.CREATE,
-            StandardOpenOption.TRUNCATE_EXISTING,
-            StandardOpenOption.WRITE,
-        ).awaitSingleOrNull()
+        withContext(Dispatchers.IO) {
+            FileChannel.open(
+                path,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.TRUNCATE_EXISTING,
+                StandardOpenOption.WRITE,
+            ).use { channel ->
+                body.collect { dataBuffer ->
+                    try {
+                        dataBuffer.readableByteBuffers().use { buffers ->
+                            for (buffer in buffers) {
+                                while (buffer.hasRemaining()) {
+                                    channel.write(buffer)
+                                }
+                            }
+                        }
+                    } finally {
+                        DataBufferUtils.release(dataBuffer)
+                    }
+                }
+            }
+        }
     }
 
     /**
